@@ -1,18 +1,15 @@
-from langchain_community.vectorstores.faiss import FAISS
-from langchain_ollama import OllamaEmbeddings, OllamaLLM
+from langchain_ollama import OllamaLLM
 from langchain.chains import RetrievalQA
+from services.indexer import get_index
 
-def query_document(user_id: str, question: str) -> str:
-    vectorstore_dir = f'vectorstore/{user_id}'
-    embeddings = OllamaEmbeddings(model="llama3.2")
+def ask_question(question: str) -> str:
+    index = get_index()
+    if index is None:
+        return "No documents indexed yet. Please upload documents first."
 
-    # Load FAISS vectorstore
-    vectorstore = FAISS.load_local(vectorstore_dir, embeddings=embeddings, allow_dangerous_deserialization=True)
+    retriever = index.as_retriever(search_kwargs={"k": 3})
+    llm = OllamaLLM(model="llama3.2")
 
-    retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+    qa = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
 
-    qa = RetrievalQA.from_chain_type(llm=OllamaLLM(model="llama3.2"), retriever=retriever)
-
-    # Use invoke (not run) per new LangChain version
-    answer = qa.invoke(question)
-    return answer
+    return qa.run(question)

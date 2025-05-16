@@ -1,124 +1,54 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>LLM Document Q&A</title>
-<style>
-  body {
-    font-family: Arial, sans-serif;
-    margin: 2rem auto;
-    max-width: 700px;
-    padding: 0 1rem;
-    background: #f7f8fa;
-    color: #222;
-  }
-  h1, h2 {
-    color: #2c3e50;
-  }
-  form {
-    margin-bottom: 1.5rem;
-    background: #fff;
-    padding: 1rem 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 0 6px rgba(0,0,0,0.1);
-  }
-  input[type="text"], input[type="file"] {
-    padding: 0.5rem;
-    font-size: 1rem;
-    margin-right: 0.5rem;
-    border-radius: 4px;
-    border: 1px solid #ccc;
-    vertical-align: middle;
-  }
-  button {
-    padding: 0.5rem 1rem;
-    font-size: 1rem;
-    background: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    vertical-align: middle;
-  }
-  button:hover {
-    background: #0056b3;
-  }
-  #upload-result {
-    margin-top: 0.5rem;
-    font-weight: bold;
-    color: #28a745;
-  }
-  #answer-box {
-    white-space: pre-wrap;
-    background: #f9f9f9;
-    color: #222;
-    font-family: 'Courier New', Courier, monospace;
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: inset 0 0 10px #ddd;
-    max-height: 250px;
-    overflow-y: auto;
-    border: 1px solid #ccc;
-  }
-  .answer-label {
-    font-weight: bold;
-    margin-top: 0.5rem;
-  }
-</style>
+    <title>Doc Q&A</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        input, button { margin: 5px; padding: 8px; }
+        .section { margin-top: 30px; }
+        pre { background: #eef5ff; padding: 10px; border-radius: 5px; }
+    </style>
 </head>
 <body>
+    <h2>Upload Document</h2>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <button type="submit">Upload & Index</button>
+    </form>
+    <p id="uploadMessage"></p>
 
-<h1>Upload Document</h1>
-<form id="upload-form" enctype="multipart/form-data">
-  <input type="text" name="user_id" placeholder="User ID" required />
-  <input type="file" name="file" required />
-  <button type="submit">Upload & Index</button>
-  <p id="upload-result"></p>
-</form>
+    <div class="section">
+        <h2>Ask Question</h2>
+        <form id="qaForm">
+            <input type="text" id="question" placeholder="Your question" size="50">
+            <button type="submit">Ask</button>
+        </form>
+        <pre id="answer"></pre>
+    </div>
 
-<h2>Ask Question</h2>
-<form id="ask-form">
-  <input type="text" name="user_id" placeholder="User ID" required />
-  <input type="text" name="question" placeholder="Your question" required />
-  <button type="submit">Ask</button>
-</form>
-<div id="answer-box">Your answer will appear here...</div>
+    <script>
+        document.getElementById("uploadForm").onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const res = await fetch("/index", {
+                method: "POST",
+                body: formData
+            });
+            const result = await res.json();
+            document.getElementById("uploadMessage").innerText = result.message || result.error;
+        };
 
-<script>
-  document.getElementById('upload-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const formData = new FormData(this);
-    const response = await fetch('/index', { method: 'POST', body: formData });
-    const result = await response.json();
-    document.getElementById('upload-result').innerText = result.message || result.error || JSON.stringify(result);
-  });
-
-  document.getElementById('ask-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const formData = new FormData(this);
-    const response = await fetch('/ask', { method: 'POST', body: formData });
-    const result = await response.json();
-    console.log('Ask response:', result);
-    if (result.answer) {
-      try {
-        let parsed = (typeof result.answer === 'string') ? JSON.parse(result.answer) : result.answer;
-        // Extract query and result only
-        let output = '';
-        if (parsed.query) output += `Query:\n${parsed.query.trim()}\n\n`;
-        if (parsed.result) output += `Result:\n${parsed.result.trim()}`;
-        document.getElementById('answer-box').textContent = output || 'No query/result found in response.';
-      } catch {
-        // If not JSON parseable, just display text
-        document.getElementById('answer-box').textContent = result.answer;
-      }
-    } else if (result.error) {
-      document.getElementById('answer-box').textContent = 'Error: ' + JSON.stringify(result.error, null, 2);
-    } else {
-      document.getElementById('answer-box').textContent = 'No answer or error returned.';
-    }
-  });
-</script>
-
+        document.getElementById("qaForm").onsubmit = async (e) => {
+            e.preventDefault();
+            const question = document.getElementById("question").value;
+            const res = await fetch("/ask", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question })
+            });
+            const data = await res.json();
+            document.getElementById("answer").innerText = "Q: " + question + "\nA: " + data.answer;
+        };
+    </script>
 </body>
 </html>
