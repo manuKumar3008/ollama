@@ -1,54 +1,190 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-    <title>Doc Q&A</title>
+    <title>PDF Chatbot</title>
     <style>
-        body { font-family: Arial; margin: 40px; }
-        input, button { margin: 5px; padding: 8px; }
-        .section { margin-top: 30px; }
-        pre { background: #eef5ff; padding: 10px; border-radius: 5px; }
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+            background: #e9f5ff;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            background-color: #3399ff;
+            color: white;
+            padding: 15px;
+            font-size: 1.5em;
+        }
+
+        .upload {
+            padding: 15px;
+            background: #f0f8ff;
+            display: flex;
+            gap: 10px;
+        }
+
+        .upload input[type="file"] {
+            flex: 1;
+        }
+
+        .upload button {
+            background: #3399ff;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow-y: auto;
+            background: #eaf4ff;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 10px;
+            max-width: 70%;
+        }
+
+        .user {
+            background: #d0e8ff;
+            margin-left: auto;
+        }
+
+        .bot {
+            background: #d6f5d6;
+            margin-right: auto;
+            white-space: pre-line;
+        }
+
+        .typing {
+            background: #f0f0f0;
+            font-style: italic;
+            margin-right: auto;
+        }
+
+        .input-area {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #ccc;
+            background: white;
+        }
+
+        .input-area textarea {
+            flex: 1;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            resize: none;
+        }
+
+        .input-area button {
+            background: #3399ff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin-left: 10px;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
-    <h2>Upload Document</h2>
-    <form id="uploadForm" enctype="multipart/form-data">
-        <input type="file" name="file">
-        <button type="submit">Upload & Index</button>
-    </form>
-    <p id="uploadMessage"></p>
+<div class="container">
+    <div class="header">📘 Ask from Your PDFs</div>
 
-    <div class="section">
-        <h2>Ask Question</h2>
-        <form id="qaForm">
-            <input type="text" id="question" placeholder="Your question" size="50">
-            <button type="submit">Ask</button>
-        </form>
-        <pre id="answer"></pre>
+    <div class="upload">
+        <input type="file" id="fileInput">
+        <input type="hidden" id="userId" value="{{ user_id }}">
+        <button onclick="uploadPDF()">Upload and Index</button>
     </div>
 
-    <script>
-        document.getElementById("uploadForm").onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const res = await fetch("/index", {
-                method: "POST",
-                body: formData
-            });
-            const result = await res.json();
-            document.getElementById("uploadMessage").innerText = result.message || result.error;
-        };
+    <div class="chat-area" id="chatWindow"></div>
 
-        document.getElementById("qaForm").onsubmit = async (e) => {
+    <div class="input-area">
+        <textarea id="question" rows="2" placeholder="Ask your question..."></textarea>
+        <button onclick="askQuestion()">Send</button>
+    </div>
+</div>
+
+<script>
+    function uploadPDF() {
+        const file = document.getElementById("fileInput").files[0];
+        const userId = document.getElementById("userId").value;
+        if (!file) return alert("Please select a file.");
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("user_id", userId);
+
+        fetch("/upload", {
+            method: "POST",
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => alert(data.message || data.error))
+        .catch(() => alert("Upload failed."));
+    }
+
+    function askQuestion() {
+        const questionInput = document.getElementById("question");
+        const question = questionInput.value.trim();
+        const userId = document.getElementById("userId").value;
+
+        if (!question) return;
+
+        appendMessage(question, "user");
+        questionInput.value = "";
+
+        // Show typing indicator
+        const typingDiv = appendMessage("Typing...", "typing");
+
+        fetch("/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `user_id=${userId}&question=${encodeURIComponent(question)}`
+        })
+        .then(res => res.json())
+        .then(data => {
+            typingDiv.remove(); // Remove typing indicator
+            appendMessage(data.answer, "bot");
+        })
+        .catch(() => {
+            typingDiv.remove();
+            appendMessage("❌ Something went wrong while getting the response.", "bot");
+        });
+    }
+
+    function appendMessage(text, type) {
+        const chat = document.getElementById("chatWindow");
+        const div = document.createElement("div");
+        div.className = `message ${type}`;
+        div.innerText = text;
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+        return div;
+    }
+
+    // Trigger send on Enter key
+    document.getElementById("question").addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            const question = document.getElementById("question").value;
-            const res = await fetch("/ask", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ question })
-            });
-            const data = await res.json();
-            document.getElementById("answer").innerText = "Q: " + question + "\nA: " + data.answer;
-        };
-    </script>
+            askQuestion();
+        }
+    });
+</script>
 </body>
 </html>

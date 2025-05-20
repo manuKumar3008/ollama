@@ -1,39 +1,52 @@
-from flask import Flask, request, jsonify, render_template
-from services.indexer import index_document
-from services.query_engine import ask_question
+from flask import Flask, request, render_template, jsonify
+from werkzeug.utils import secure_filename
 import os
 
+from services.indexer import index_documents, list_user_documents
+from services.query_engine import query_router  # <- fixed import
+
 app = Flask(__name__)
-os.makedirs("uploads", exist_ok=True)
+UPLOADS = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOADS, exist_ok=True)
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html")
+    user_id = request.args.get("user", "default")
+    return render_template("index.html", user_id=user_id)
 
-@app.route("/index", methods=["POST"])
-def upload_and_index():
+@app.route("/upload", methods=["POST"])
+def upload():
+    user_id = request.form.get("user_id", "default")
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
-    filepath = os.path.join("uploads", file.filename)
-    file.save(filepath)
+    safe_name = secure_filename(file.filename)
+    user_dir = os.path.join(UPLOADS, user_id)
+    os.makedirs(user_dir, exist_ok=True)
 
-    try:
-        index_document(filepath)
-        return jsonify({"message": "Document indexed successfully."})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    file_path = os.path.join(user_dir, safe_name)
+    file.save(file_path)
+
+    doc_name = os.path.splitext(safe_name)[0]
+    index_documents(user_id, doc_name, file_path)
+
+    return jsonify({"message": f"Document '{safe_name}' indexed successfully."})
 
 @app.route("/ask", methods=["POST"])
 def ask():
-    data = request.get_json()
-    question = data.get("question", "")
-    if not question:
-        return jsonify({"error": "No question provided"}), 400
+    user_id = request.form.get("user_id", "default")
+    question = request.form.get("question")
 
-    answer = ask_question(question)
-    return jsonify({"answer": answer})
+    if not question:
+        return jsonify({"answer": "Please provide a question."}), 400
+
+    try:
+        answer = query_router(user_id, question)
+        return jsonify({"answer": answer})
+    except Exception as e:
+        print("[ERROR]", e)
+        return jsonify({"answer": "Error processing your question."}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

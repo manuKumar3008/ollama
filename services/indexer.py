@@ -1,27 +1,49 @@
 import os
-from langchain_community.document_loaders import TextLoader, PyPDFLoader
+import fitz  # PyMuPDF
+import pytesseract
+from PIL import Image
+
+from langchain_ollama import OllamaEmbeddings  # updated import
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.docstore.document import Document
 
-VECTORSTORE_DIR = "vectorstore/global_index"
+BASE_UPLOADS = os.path.join(os.path.dirname(__file__), "../uploads")
+BASE_INDEX = os.path.join(os.path.dirname(__file__), "../vectorstore")
+os.makedirs(BASE_UPLOADS, exist_ok=True)
+os.makedirs(BASE_INDEX, exist_ok=True)
 
-def index_document(file_path: str):
-    # Use appropriate loader based on file type
-    if file_path.lower().endswith(".pdf"):
-        loader = PyPDFLoader(file_path)
-    else:
-        loader = TextLoader(file_path, encoding='utf-8')  # Avoid Unicode errors
+def extract_text_from_pdf(filepath):
+    full_text = ""
+    with fitz.open(filepath) as doc:
+        for page in doc:
+            text = page.get_text().strip()
+            if text:
+                full_text += text + "\n"
+            else:
+                # Convert page to image for OCR
+                pix = page.get_pixmap(dpi=300)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                ocr_text = pytesseract.image_to_string(img)
+                full_text += ocr_text + "\n"
+    return full_text
 
-    documents = loader.load()
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectorstore = FAISS.from_documents(documents, embeddings)
+def index_documents(user_id, doc_name, filepath):
+    raw_text = extract_text_from_pdf(filepath)
+    if not raw_text.strip():
+        raise ValueError("No extractable text found.")
 
-    os.makedirs(VECTORSTORE_DIR, exist_ok=True)
-    vectorstore.save_local(VECTORSTORE_DIR)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    chunks = splitter.split_text(raw_text)
+    documents = [Document(page_content=chunk) for chunk in chunks]
 
-def get_index():
-    if not os.path.exists(VECTORSTORE_DIR):
-        return None
+    embeddings = OllamaEmbeddings(model="nomic-embed-text")
+    vectordb = FAISS.from_documents(documents, embeddings)
 
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    return FAISS.load_local(VECTORSTORE_DIR, embeddings, allow_dangerous_deserialization=True)
+    save_path = os.path.join(BASE_INDEX, user_id, doc_name)
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    vectordb.save_local(save_path)
+
+def list_user_documents(user_id):
+    user_dir = os.path.join(BASE_UPLOADS, user_id)
+    return os.listdir(user_dir) if os.path.exists(user_dir) else []
