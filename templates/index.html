@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
+    <meta charset="UTF-8">
     <title>PDF Chatbot</title>
     <style>
         body, html {
@@ -9,55 +10,137 @@
             height: 100%;
             font-family: Arial, sans-serif;
             background: #e9f5ff;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
 
         .container {
             display: flex;
             flex-direction: column;
-            height: 100vh;
+            flex-grow: 1;
         }
 
         .header {
             background-color: #3399ff;
             color: white;
             padding: 15px;
-            font-size: 1.5em;
+            font-size: 1.2em;
+            text-align: center;
         }
 
-        .upload {
-            padding: 15px;
-            background: #f0f8ff;
+        .content-area {
             display: flex;
-            gap: 10px;
+            flex-grow: 1;
+            height: calc(100vh - 60px);
         }
 
-        .upload input[type="file"] {
-            flex: 1;
+        .upload-section {
+            background: #f7faff;
+            border-right: 1px solid #ddd;
+            padding: 20px;
+            width: 40%;
+            box-sizing: border-box;
         }
 
-        .upload button {
+        .upload-title {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .upload-box {
+            border: 1px dashed #ccc;
+            background: white;
+            padding: 20px 40px;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            width: 80%;
+            max-width: 400px;
+            margin: 0 auto 10px auto;
+        }
+
+        .upload-box:hover {
+            border-color: #3399ff;
+        }
+
+        .upload-icon {
+            font-size: 2em;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        .upload-text {
+            color: #555;
+            font-size: 1em;
+        }
+
+        .browse-link {
+            color: #3399ff;
+            font-weight: bold;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-name-display {
+            margin: 10px auto;
+            text-align: center;
+            font-size: 0.9em;
+            color: #777;
+        }
+
+        .upload-instructions {
+            color: #777;
+            font-size: 0.8em;
+            text-align: center;
+        }
+
+        .upload-button {
+            display: block;
             background: #3399ff;
             color: white;
             border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
+            padding: 10px 20px;
+            border-radius: 3px;
             cursor: pointer;
+            font-size: 1em;
+            margin: 20px auto;
+        }
+
+        .upload-button:hover {
+            background-color: #2377cc;
+        }
+
+        .chat-section {
+            display: flex;
+            flex-direction: column;
+            width: 60%;
+            background: #eaf4ff;
+            padding: 20px;
+            box-sizing: border-box;
         }
 
         .chat-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            padding: 20px;
+            flex-grow: 1;
             overflow-y: auto;
-            background: #eaf4ff;
+            border: 1px solid #ccc;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
         }
 
         .message {
             margin: 10px 0;
             padding: 12px;
-            border-radius: 10px;
+            border-radius: 5px;
             max-width: 70%;
+            font-size: 0.9em;
+            white-space: pre-line;
         }
 
         .user {
@@ -68,28 +151,28 @@
         .bot {
             background: #d6f5d6;
             margin-right: auto;
-            white-space: pre-line;
         }
 
         .typing {
             background: #f0f0f0;
             font-style: italic;
             margin-right: auto;
+            font-size: 0.9em;
+            padding: 8px;
+            border-radius: 3px;
         }
 
         .input-area {
             display: flex;
-            padding: 10px;
-            border-top: 1px solid #ccc;
-            background: white;
         }
 
         .input-area textarea {
             flex: 1;
             padding: 10px;
-            border-radius: 5px;
+            border-radius: 3px;
             border: 1px solid #ccc;
             resize: none;
+            font-size: 0.9em;
         }
 
         .input-area button {
@@ -98,93 +181,134 @@
             border: none;
             padding: 10px 15px;
             margin-left: 10px;
-            border-radius: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .input-area button:hover {
+            background-color: #2377cc;
+        }
+
+        .dropdown {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .dropdown select {
+            padding: 6px;
+            font-size: 0.9em;
         }
     </style>
 </head>
 <body>
-<div class="container">
-    <div class="header">📘 Ask from Your PDFs</div>
+    <div class="container">
+        <div class="header">📄 Ask Your Knowledge Base</div>
+        <div class="content-area">
+            <div class="upload-section">
+                <h2 class="upload-title">Upload PDF</h2>
+                <label for="fileInput" class="upload-box">
+                    <div class="upload-icon">⬆️</div>
+                    <p class="upload-text">Datei wählen</p>
+                </label>
+                <input type="file" id="fileInput" class="file-input" onchange="updateFileName()">
+                <p id="fileNameDisplay" class="file-name-display">Keine Datei gewählt</p>
+                <p class="upload-instructions">Bis zu 25 MB • Keine Sonderzeichen</p>
+                <input type="hidden" id="userId" value="{{ user_id }}">
+                <button onclick="uploadPDF()" class="upload-button">Upload & Index</button>
 
-    <div class="upload">
-        <input type="file" id="fileInput">
-        <input type="hidden" id="userId" value="{{ user_id }}">
-        <button onclick="uploadPDF()">Upload and Index</button>
+              
+            </div>
+
+            <div class="chat-section">
+                <div class="chat-area" id="chatWindow"></div>
+                <div class="input-area">
+                    <textarea id="question" rows="2" placeholder="Stelle deine Frage..."></textarea>
+                    <button onclick="askQuestion()">Senden</button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="chat-area" id="chatWindow"></div>
-
-    <div class="input-area">
-        <textarea id="question" rows="2" placeholder="Ask your question..."></textarea>
-        <button onclick="askQuestion()">Send</button>
-    </div>
-</div>
-
-<script>
-    function uploadPDF() {
-        const file = document.getElementById("fileInput").files[0];
-        const userId = document.getElementById("userId").value;
-        if (!file) return alert("Please select a file.");
-
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("user_id", userId);
-
-        fetch("/upload", {
-            method: "POST",
-            body: formData
-        })
-        .then(res => res.json())
-        .then(data => alert(data.message || data.error))
-        .catch(() => alert("Upload failed."));
-    }
-
-    function askQuestion() {
-        const questionInput = document.getElementById("question");
-        const question = questionInput.value.trim();
-        const userId = document.getElementById("userId").value;
-
-        if (!question) return;
-
-        appendMessage(question, "user");
-        questionInput.value = "";
-
-        // Show typing indicator
-        const typingDiv = appendMessage("Typing...", "typing");
-
-        fetch("/ask", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `user_id=${userId}&question=${encodeURIComponent(question)}`
-        })
-        .then(res => res.json())
-        .then(data => {
-            typingDiv.remove(); // Remove typing indicator
-            appendMessage(data.answer, "bot");
-        })
-        .catch(() => {
-            typingDiv.remove();
-            appendMessage("❌ Something went wrong while getting the response.", "bot");
-        });
-    }
-
-    function appendMessage(text, type) {
-        const chat = document.getElementById("chatWindow");
-        const div = document.createElement("div");
-        div.className = `message ${type}`;
-        div.innerText = text;
-        chat.appendChild(div);
-        chat.scrollTop = chat.scrollHeight;
-        return div;
-    }
-
-    // Trigger send on Enter key
-    document.getElementById("question").addEventListener("keydown", function (e) {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            askQuestion();
+    <script>
+        function updateFileName() {
+            const fileInput = document.getElementById("fileInput");
+            const fileNameDisplay = document.getElementById("fileNameDisplay");
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = fileInput.files[0].name;
+            } else {
+                fileNameDisplay.textContent = "Keine Datei gewählt";
+            }
         }
-    });
-</script>
+
+        function uploadPDF() {
+            const file = document.getElementById("fileInput").files[0];
+            const userId = document.getElementById("userId").value;
+            if (!file) return alert("Bitte Datei auswählen.");
+
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("user_id", userId);
+
+            fetch("/upload", {
+                method: "POST",
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message || data.error);
+                loadDocumentList();
+            })
+            .catch(() => alert("Upload fehlgeschlagen."));
+        }
+
+        function askQuestion() {
+            const questionInput = document.getElementById("question");
+            const question = questionInput.value.trim();
+            const userId = document.getElementById("userId").value;
+            if (!question) return;
+
+            appendMessage(question, "user");
+            questionInput.value = "";
+
+            const typingDiv = appendMessage("Antwort wird generiert...", "typing");
+
+            fetch("/ask", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `user_id=${userId}&question=${encodeURIComponent(question)}`
+            })
+            .then(res => res.json())
+            .then(data => {
+                typingDiv.remove();
+                appendMessage(data.answer, "bot");
+            })
+            .catch(() => {
+                typingDiv.remove();
+                appendMessage("❌ Es ist ein Fehler aufgetreten.", "bot");
+            });
+        }
+
+        function appendMessage(text, type) {
+            const chat = document.getElementById("chatWindow");
+            const div = document.createElement("div");
+            div.className = `message ${type}`;
+            div.innerText = text;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+            return div;
+        }
+
+      
+
+        document.getElementById("question").addEventListener("keydown", function (e) {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                askQuestion();
+            }
+        });
+
+        window.onload = loadDocumentList;
+    </script>
 </body>
 </html>
