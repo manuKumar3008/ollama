@@ -1,72 +1,84 @@
-# query.py
 import os
-import re
-import fitz
-import pytesseract
-from PIL import Image
-from langchain_ollama import OllamaEmbeddings
-from langchain_ollama.llms import OllamaLLM
+from langdetect import detect
 from langchain_community.vectorstores import FAISS
+from langchain_ollama import OllamaEmbeddings, OllamaLLM
 from langchain.chains import RetrievalQA
 
-BASE_INDEX = os.path.join(os.path.dirname(__file__), "../vectorstore")
-UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "../uploads")
+VECTOR_DIR = "vectorstore"
 
-def extract_doc_name_from_question(question: str):
-    patterns = [
-        r"(?:document|from)\s+(?:named|called)?[\"']?([\w\s]+)[\"']?",  # English
-        r"Dokument(?:\s+mit\s+dem\s+Namen)?\s+([a-zA-Z0-9_\s]+)",        # German
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, question, re.IGNORECASE)
-        if match:
-            return match.group(1).strip().replace(" ", "_")
-    return None
+def normalize_doc_name(name: str) -> str:
+    name = name.lower().replace('_', ' ')
+    name = ' '.join(name.split())
+    return name
 
 def get_available_documents(user_id: str):
-    user_path = os.path.join(BASE_INDEX, user_id)
-    if os.path.exists(user_path):
-        return [d for d in os.listdir(user_path) if os.path.isdir(os.path.join(user_path, d))]
-    return []
+    user_dir = os.path.join(VECTOR_DIR, user_id)
+    if not os.path.exists(user_dir):
+        return []
+    return os.listdir(user_dir)
 
-def count_words_in_pdf(filepath):
-    word_count = 0
-    with fitz.open(filepath) as doc:
-        for page in doc:
-            text = page.get_text().strip()
-            if not text:
-                pix = page.get_pixmap(dpi=300)
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                text = pytesseract.image_to_string(img)
-            word_count += len(text.split())
-    return word_count
+def extract_doc_name_from_question(question: str) -> str:
+    question_lower = question.lower()
+    tokens = question_lower.split()
+
+    preps = [
+    # English
+    "from", "from the", "in", "inside", "of", "about", "regarding", "related to",
+    "based on", "including", "within", "concerning", "according to", "as per",
+    "document", "file", "report", "text", "pdf", "doc",
+
+    # German
+    "von", "vom", "vom dokument", "aus", "aus dem", "aus der", "im", "im dokument",
+    "bezüglich", "basierend auf", "entsprechend", "laut", "über", "hinsichtlich",
+    "einschließlich", "im bezug auf", "gemäß", "in bezug auf", "bericht", "dokument"
+]
+    for prep in preps:
+        if prep in question_lower:
+            idx = tokens.index(prep.split()[-1])
+            return ' '.join(tokens[idx + 1:]).strip()
+    return None
 
 def query_router(user_id: str, question: str, history: list = None) -> str:
+    try:
+        lang = detect(question)
+    except:
+        lang = "de"
+
     doc_name = extract_doc_name_from_question(question)
     user_docs = get_available_documents(user_id)
+
     if not user_docs:
-        return "❌ Für diesen Benutzer wurden keine Dokumente gefunden."
+        return (
+            "❌ Für diesen Benutzer wurden keine Dokumente gefunden."
+            if lang == "de" else
+            "❌ No documents found for this user."
+        )
+
     if not doc_name:
-        return "❌ Bitte gib in deiner Frage an, auf welches Dokument du dich beziehst (z. B. 'vom Dokument Beispielbericht')."
+        return (
+            "❌ Bitte gib in deiner Frage an, auf welches Dokument du dich beziehst."
+            if lang == "de" else
+            "❌ Please specify the document you're referring to in your question."
+        )
 
-    normalized_docs = [d.lower().replace(" ", "_") for d in user_docs]
-    doc_name_normalized = doc_name.lower().replace(" ", "_")
+    doc_name_norm = normalize_doc_name(doc_name)
+    matched_doc = None
+    for d in user_docs:
+        if normalize_doc_name(d) == doc_name_norm:
+            matched_doc = d
+            break
 
-    if doc_name_normalized not in normalized_docs:
-        return f"📂 Dokument *{doc_name}* wurde nicht gefunden. Verfügbare Dokumente: {', '.join([doc.replace('_', ' ') for doc in user_docs])}"
+    if matched_doc is None:
+        available = ", ".join(user_docs)
+        return (
+            f"📂 Dokument *{doc_name}* wurde nicht gefunden. Verfügbare Dokumente: {available}"
+            if lang == "de" else
+            f"📂 Document *{doc_name}* not found. Available documents: {available}"
+        )
 
-    doc_name = user_docs[normalized_docs.index(doc_name_normalized)]
-
-    if "anzahl" in question.lower() and "wörter" in question.lower():
-        file_path = os.path.join(UPLOADS_DIR, user_id, f"{doc_name.replace('_', ' ')}.pdf")
-        if not os.path.exists(file_path):
-            return f"📂 Quelldatei für *{doc_name.replace('_', ' ')}* nicht gefunden."
-        word_count = count_words_in_pdf(file_path)
-        return f"📄 *{doc_name.replace('_', ' ')}* enthält ungefähr **{word_count} Wörter**."
-
-    doc_path = os.path.join(BASE_INDEX, user_id, doc_name)
+    doc_path = os.path.join(VECTOR_DIR, user_id, matched_doc)
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
-    llm = OllamaLLM(model="llama3.2")
+    llm = OllamaLLM(model="llama3.2")  # You can change model if needed
     vectorstore = FAISS.load_local(doc_path, embeddings, allow_dangerous_deserialization=True)
     retriever = vectorstore.as_retriever()
     qa = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
@@ -74,11 +86,22 @@ def query_router(user_id: str, question: str, history: list = None) -> str:
     full_query = ""
     if history:
         for h in history:
-            full_query += f"Frage: {h['question']}\nAntwort: {h['answer']}\n"
-    full_query += f"Frage: {question}\nAntworte in Deutsch."
+            full_query += (
+                f"Frage: {h['question']}\nAntwort: {h['answer']}\n"
+                if lang == "de" else
+                f"Question: {h['question']}\nAnswer: {h['answer']}\n"
+            )
+
+    full_query += (
+        f"Frage: {question}\nAntworte in Deutsch."
+        if lang == "de" else
+        f"Question: {question}\nAnswer in English."
+    )
 
     result = qa.invoke({"query": full_query})
+
     for key in ['result', 'output', 'answer']:
         if key in result:
-            return f"📄 *{doc_name.replace('_', ' ')}*: {result[key].strip()}"
-    return f"📄 *{doc_name.replace('_', ' ')}*: {next(iter(result.values())).strip()}"
+            return f"📄 *{matched_doc}*: {result[key].strip()}"
+
+    return f"📄 *{matched_doc}*: {next(iter(result.values())).strip()}"
